@@ -199,7 +199,7 @@
       </div>
     </div>
 
-    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 pt-5 border-t hairline">
+    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 pt-5 border-t hairline">
       <div class="stat-tile">
         <p class="stat-label">總投入本金</p>
         <p id="statPrincipal" class="stat-value">—</p>
@@ -209,21 +209,25 @@
         <p id="statDividend" class="stat-value">—</p>
       </div>
       <div class="stat-tile">
-        <p class="stat-label">未實現損益</p>
+        <p class="stat-label">價差值（未實現）</p>
         <p id="statUnrealized" class="stat-value">—</p>
       </div>
       <div class="stat-tile">
-        <p class="stat-label">整體投報率（ROI）</p>
+        <p class="stat-label">已結價差</p>
+        <p id="statRealized" class="stat-value">—</p>
+      </div>
+      <div class="stat-tile">
+        <p class="stat-label" title="(價差值 + 已結價差 + 累積配息) ÷ 總投入本金">整體投報率（累積 ROI）</p>
         <p id="statROI" class="stat-value">—</p>
       </div>
       <div class="stat-tile">
-        <p class="stat-label">年化報酬率（XIRR）</p>
+        <p class="stat-label" title="以第一筆紀錄月底的市值為起點計算">年化報酬率（XIRR）</p>
         <p id="statXIRR" class="stat-value">—</p>
       </div>
     </div>
 
     <div class="pt-5 border-t hairline">
-      <p class="text-xs text-inkfaint mb-2">各投資品項累積投報率</p>
+      <p class="text-xs text-inkfaint mb-2">各投資品項投報率（價差 ÷ 剩餘成本）</p>
       <div id="assetROIItems" class="flex flex-wrap gap-2"></div>
     </div>
   </section>
@@ -262,6 +266,7 @@
     <div class="panel p-5 sm:p-6">
       <div class="flex items-center gap-2 mb-1">
         <span class="w-2 h-2 rounded-full bg-slate"></span>
+
         <h2 class="font-serif text-base font-600">投資所得比例</h2>
       </div>
       <p class="text-xs text-inkfaint mb-4">各投資品項的價差與配息占總投資所得的比例</p>
@@ -384,10 +389,20 @@
     <div class="px-6 py-5 space-y-5">
       <div class="flex items-start justify-between gap-4">
         <div>
-          <p class="text-sm font-medium">匯出 JSON</p>
-          <p class="text-xs text-inkfaint">將所有歷史資料與設定下載為 .json 檔案</p>
+          <p class="text-sm font-medium">從雲端同步</p>
+          <p class="text-xs text-inkfaint" id="cloudSyncStatus">從 Google Apps Script API 讀取最新資料並合併；App 開啟時背景自動同步以 Sheet 為主，手動按這裡則可自選衝突處理方式</p>
         </div>
-        <button class="btn btn-ghost" onclick="exportData()">匯出</button>
+        <button class="btn btn-ghost" id="cloudSyncBtn" onclick="syncFromCloud(true)">同步</button>
+      </div>
+      <div class="flex items-start justify-between gap-4 border-t hairline pt-5">
+        <div>
+          <p class="text-sm font-medium">備份匯出</p>
+          <p class="text-xs text-inkfaint">把所有歷史資料與設定存成 JSON 備份；App 內會開啟分享選單，也可直接複製內容</p>
+        </div>
+        <div class="flex flex-col gap-2 shrink-0">
+          <button class="btn btn-ghost" onclick="exportData()">匯出</button>
+          <button class="btn btn-ghost" onclick="copyExportData()">複製</button>
+        </div>
       </div>
       <div class="flex items-start justify-between gap-4 border-t hairline pt-5">
         <div>
@@ -435,32 +450,39 @@
       <button class="btn-text text-xl leading-none" onclick="cancelMergeData()" aria-label="關閉">&times;</button>
     </div>
     <div class="px-6 py-5 space-y-4">
-      <p class="text-sm text-inkfaint">同一個月份、同一項資產若新舊檔案都有數值，要如何處理？沒有衝突的月份／資產會直接補進來。</p>
+      <p class="text-sm text-inkfaint">同一個月份、同一項資產若新舊資料都有數值，要如何處理？沒有衝突的月份／資產會直接補進來。</p>
+      <label id="mergeReplaceOption" style="display:none" class="flex items-start gap-3 cursor-pointer">
+        <input type="radio" name="mergeMode" value="replace" class="mt-1">
+        <span>
+          <span class="block text-sm font-medium">清除舊資料，以雲端為準（雲端同步預設）</span>
+          <span class="block text-xs text-inkfaint">先清空本機所有月紀錄與資產設定，再整份換成雲端資料。本機還沒寫回 Sheet 的資料會消失。</span>
+        </span>
+      </label>
       <label class="flex items-start gap-3 cursor-pointer">
         <input type="radio" name="mergeMode" value="new" checked class="mt-1">
         <span>
-          <span class="block text-sm font-medium">以新檔案為主（預設）</span>
-          <span class="block text-xs text-inkfaint">重複項目直接用新檔案的數值覆蓋舊資料。適合發現歷史數據有誤、需要用新檔校正的情況。</span>
+          <span class="block text-sm font-medium">以新資料為主</span>
+          <span class="block text-xs text-inkfaint">重複項目直接用新資料的數值覆蓋舊資料。適合發現歷史數據有誤、需要用新資料校正的情況。</span>
         </span>
       </label>
       <label class="flex items-start gap-3 cursor-pointer">
         <input type="radio" name="mergeMode" value="old" class="mt-1">
         <span>
-          <span class="block text-sm font-medium">以舊檔案為主</span>
-          <span class="block text-xs text-inkfaint">重複項目保留舊資料，新檔案僅補上缺少的月份／資產。適合舊檔已人工校對過，避免被新匯入檔蓋掉。</span>
+          <span class="block text-sm font-medium">以舊資料為主</span>
+          <span class="block text-xs text-inkfaint">重複項目保留原本資料，新資料僅補上缺少的月份／資產。適合本機剛輸入、還沒同步回雲端，避免被雲端舊資料蓋掉。</span>
         </span>
       </label>
       <label class="flex items-start gap-3 cursor-pointer">
         <input type="radio" name="mergeMode" value="sum" class="mt-1">
         <span>
           <span class="block text-sm font-medium">累加／相加</span>
-          <span class="block text-xs text-inkfaint">重複項目將新舊檔案的數值直接相加。適合兩份檔案分別記錄不同帳戶，需要加總的情況。</span>
+          <span class="block text-xs text-inkfaint">重複項目將新舊資料的數值直接相加。適合兩邊分別記錄不同帳戶，需要加總的情況。</span>
         </span>
       </label>
     </div>
     <div class="flex justify-end gap-2 px-6 py-4 border-t hairline">
       <button class="btn btn-ghost" onclick="cancelMergeData()">取消</button>
-      <button class="btn btn-primary" onclick="confirmMergeData()">確認合併</button>
+      <button class="btn btn-primary" id="confirmMergeBtn" onclick="confirmMergeData()">確認合併</button>
     </div>
   </div>
 </div>
@@ -506,6 +528,7 @@
 <script>
 /* ==================== 常數與工具 ==================== */
 const STORAGE_KEY = 'assetLedgerAppV2';
+const API_URL = "https://script.google.com/macros/s/AKfycbw1hNvN4F-q1Adg0aiSn2sgFTCuXBTcGFC8AYaRizztIas7XKbJKkL5KSPX-A11PriB/exec"; // 請替換成你的 Google Apps Script 網頁應用程式網址
 const PALETTE = ['#33553B', '#4C6B8A', '#B9862E', '#8C8579', '#7A4B8C', '#3D7A6B', '#A3453A', '#5B6EC4', '#C97A3D', '#4E8C6E'];
 
 let state = null;
@@ -539,6 +562,93 @@ function loadState() {
 
 function saveState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
+/* ==================== 雲端 API 同步 ==================== */
+function isApiConfigured() {
+  return typeof API_URL === 'string' && API_URL.trim() !== '' && !API_URL.includes('YOUR_APPS_SCRIPT_WEB_APP_URL');
+}
+
+// 向 Google Apps Script API 取得最新資料。只負責抓取與格式驗證，
+// 不直接套用到 state——是否覆蓋/合併由呼叫端（syncFromCloud）決定，
+// 避免背景自動同步時把使用者在 App 本機手動輸入、還沒寫回 Sheet 的資料蓋掉。
+// 回傳 { ok, data, message }：ok=true 時 data 是 { assets, records }；
+// ok=false 時 message 帶著實際失敗原因，方便除錯。
+async function fetchFromApi() {
+  if (!API_URL || API_URL.includes("YOUR_APPS_SCRIPT_WEB_APP_URL")) {
+    console.warn("未設定 API_URL");
+    return { ok: false, message: '尚未設定 API_URL' };
+  }
+
+  try {
+    // 加上 redirect: 'follow' 與 cache: 'no-store' 確保能拿到最新轉址後的 JSON
+    const res = await fetch(API_URL, {
+      method: 'GET',
+      redirect: 'follow',
+      cache: 'no-store'
+    });
+
+    if (!res.ok) throw new Error(`HTTP 錯誤，狀態碼：${res.status}`);
+
+    const json = await res.json();
+
+    if (json.status === 'success' && json.data && Array.isArray(json.data.assets) && Array.isArray(json.data.records)) {
+      return { ok: true, data: { assets: json.data.assets, records: json.data.records } };
+    }
+    if (json.status === 'error') {
+      // 直接把 Code.gs 丟出來的具體錯誤原封不動帶回來（例如：找不到分頁「資產」…）
+      throw new Error(json.message || 'API 回傳錯誤，但未附帶說明');
+    }
+    throw new Error('API 回傳格式不是預期的 { status, data }，請確認 Code.gs 版本是否正確部署');
+  } catch (err) {
+    console.error("雲端同步失敗：", err);
+    return { ok: false, message: (err && err.message) ? err.message : String(err) };
+  }
+}
+
+// showToastResult = false：App 啟動時背景自動同步。
+//   跟本機資料「合併」而非整包覆蓋——沒有衝突的部分（例如本機才有的
+//   最新月份）還是會保留；但同一個月同一項資產兩邊都有值時，
+//   以「Sheet 為主」直接覆蓋，因為 Google Sheet 是資料的權威來源。
+//   Sheet 現在已經沒有的資產（例如改名或刪掉了），本機也會跟著移除
+//   （包含它在所有歷史月份留下的數字），避免改名後舊名字一直留著不消失。
+//   失敗則靜默略過，沿用本機現有資料。
+// showToastResult = true：使用者手動按「同步」。
+//   會先跳出「合併資料．衝突處理方式」視窗，讓你自己選新舊資料誰優先，
+//   跟「更新數據（合併）」匯入 JSON 用的是同一套邏輯與畫面。
+async function syncFromCloud(showToastResult) {
+  if (!isApiConfigured()) {
+    if (showToastResult) showToast('尚未設定 API_URL，無法從雲端同步');
+    return false;
+  }
+  const btn = document.getElementById('cloudSyncBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '讀取中…'; }
+  const result = await fetchFromApi();
+  if (btn) { btn.disabled = false; btn.textContent = '同步'; }
+
+  if (!result.ok) {
+    if (showToastResult) showToast(`雲端同步失敗：${result.message}`);
+    else console.warn('[背景雲端同步失敗，沿用本地資料]', result.message);
+    return false;
+  }
+
+  if (!showToastResult) {
+    // 背景自動同步：以 Sheet 為主的合併，不打斷使用者、不跳視窗
+    const mergedRecords = mergeRecordLists(state.records, result.data.records, 'new');
+    let mergedAssets = dedupeAssetsByName(mergeAssetLists(state.assets, result.data.assets), mergedRecords);
+    const removal = removeAssetsMissingFromCloud(mergedAssets, mergedRecords, result.data.assets);
+    state = { assets: removal.assets, records: removal.records };
+    saveState();
+    renderAll();
+    return true;
+  }
+
+  // 使用者手動按「同步」：交給合併衝突視窗，讓他自己選新舊資料誰優先
+  pendingMergeData = result.data;
+  pendingMergeSource = 'cloud';
+  setMergeModalDefaults('cloud');
+  openModal('mergeModalBackdrop');
+  return true;
 }
 
 function getDefaultAssets() {
@@ -576,6 +686,9 @@ function getDemoData() {
   };
 }
 
+
+
+
 /* ==================== 計算邏輯 ==================== */
 function sortedRecords() {
   return [...state.records].sort((a, b) => a.month.localeCompare(b.month));
@@ -612,17 +725,39 @@ function computeTotals(record) {
     const cat = asset ? asset.category : 'other';
     if (cat === 'invest') investTotal += (v || 0); else otherTotal += (v || 0);
   });
-  return { total: investTotal + otherTotal, investTotal, otherTotal };
+  
+  const sumTotal = investTotal + otherTotal;
+  // 若該月有 rawTotal 且大於細項加總（代表舊紀錄只有填總資產），則直接使用 rawTotal
+  const total = (record.rawTotal !== undefined && record.rawTotal > sumTotal) ? record.rawTotal : sumTotal;
+  
+  return { total, investTotal, otherTotal };
 }
 
 function computeSavingsProfit(recs, idx) {
   if (idx === 0) return { savings: null, profit: null };
+  
   const cur = computeTotals(recs[idx]).total;
   const prev = computeTotals(recs[idx - 1]).total;
-  const savings = cur - prev;
-  const income = recs[idx].nonInvestmentIncome || 0;
-  const expense = recs[idx].expense || 0;
-  const profit = cur - prev - income + expense;
+  const netChange = cur - prev; // 當月總資產變動額
+
+  const currentRec = recs[idx];
+  const income = currentRec.nonInvestmentIncome || 0;
+  const expense = currentRec.expense || 0;
+  
+  // 計算當月所有投資品項的新增投入本金加總
+  let monthContributions = 0;
+  if (currentRec.contributions) {
+    Object.values(currentRec.contributions).forEach(c => {
+      monthContributions += (Number(c) || 0);
+    });
+  }
+
+  // 「存」：若有填寫非投資收支則優先採用（收入 - 開銷），否則採用當月新增投入本金
+  const savings = (income || expense) ? (income - expense) : monthContributions;
+  
+  // 「獲利」：當月總資產變動額 - 當月存入金額
+  const profit = netChange - savings;
+
   return { savings, profit };
 }
 
@@ -648,17 +783,59 @@ function buildCumulativeSeries(recs) {
   });
 }
 
-function computeAssetROI(assetId, recs) {
-  let cumC = 0, cumD = 0;
-  recs.forEach(r => {
-    cumC += (r.contributions && r.contributions[assetId]) || 0;
-    cumD += (r.dividends && r.dividends[assetId]) || 0;
-  });
-  if (cumC <= 0) return null;
-  const latest = recs[recs.length - 1];
-  const marketValue = (latest.values && latest.values[assetId]) || 0;
-  return (marketValue + cumD - cumC) / cumC * 100;
+// 計算兩個 'YYYY-MM' 月份字串相差幾個月（latest - first），最小為 0
+function monthsBetweenStr(m1, m2) {
+  const [y1, mo1] = String(m1).split('-').map(Number);
+  const [y2, mo2] = String(m2).split('-').map(Number);
+  return Math.max(0, (y2 - y1) * 12 + (mo2 - mo1));
 }
+
+// 把「累積報酬率（%）」依經過月數換算成複利年化報酬率（%）：(1+總報酬率)^(1/年數) - 1
+// 不足一個月（months<=0）時無法年化，回傳 null，由呼叫端決定要不要退回顯示累積報酬率。
+function annualizeCompound(cumRoiPercent, months) {
+  if (cumRoiPercent === null || cumRoiPercent === undefined || !isFinite(cumRoiPercent)) return null;
+  if (!months || months <= 0) return null;
+  const years = months / 12;
+  const base = 1 + cumRoiPercent / 100;
+  if (base <= 0) return -100; // 本金全部虧光甚至更多，年化直接視為 -100%
+  return (Math.pow(base, 1 / years) - 1) * 100;
+}
+
+// 以「平均成本法」追蹤單一品項的持有成本，把損益拆成三塊：
+//   未實現價差＝現值－剩餘成本；已結價差＝賣出（contributions 為負）時，賣出金額－被賣掉那部分的成本；配息＝dividends 加總。
+// 賣出比例＝賣出金額 ÷（賣出前市值＝當月現值＋賣出金額），被賣掉的成本＝賣出前成本 × 賣出比例。
+// 恆等式：未實現 + 已結 ＝ 現值 － 淨投入，所以拆開後總損益不變。
+function computeAssetCost(assetId, recs) {
+  let cost = 0, realized = 0, dividend = 0, netContribution = 0;
+  (recs || []).forEach(r => {
+    const c = Number(r.contributions && r.contributions[assetId]) || 0;
+    const v = Number(r.values && r.values[assetId]) || 0;
+    dividend += Number(r.dividends && r.dividends[assetId]) || 0;
+    netContribution += c;
+    if (c >= 0) {
+      cost += c;
+    } else {
+      const proceeds = -c;
+      const before = v + proceeds;
+      const frac = before > 0 ? Math.min(1, proceeds / before) : 1;
+      const removed = cost * frac;
+      cost -= removed;
+      realized += proceeds - removed;
+    }
+  });
+  const latest = recs && recs.length ? recs[recs.length - 1] : null;
+  const value = latest ? (Number(latest.values && latest.values[assetId]) || 0) : 0;
+  return { cost, realized, dividend, netContribution, value, unrealized: value - cost };
+}
+
+// 個體投報率＝未實現價差 ÷ 剩餘成本（只看價差，不含配息與已結價差）
+function computeAssetROI(assetId, recs) {
+  if (!recs || recs.length === 0) return null;
+  const s = computeAssetCost(assetId, recs);
+  if (s.cost <= 0) return null;
+  return (s.unrealized / s.cost) * 100;
+}
+
 
 function xirrNpv(flows, t0, r) {
   return flows.reduce((acc, f) => {
@@ -698,109 +875,34 @@ function xirrSolve(flows) {
   return (lo + hi) / 2;
 }
 
-function getRecordsInRange(startMonth, endMonth) {
-  return sortedRecords().filter(r => r.month >= startMonth && r.month <= endMonth);
-}
-
-function getOpeningValue(startMonth, assetIds) {
-  const recs = sortedRecords();
-  const before = recs.filter(r => r.month < startMonth);
-  if (!before.length) return 0;
-  const last = before[before.length - 1];
-  return assetIds.reduce((sum, id) => sum + ((last.values && last.values[id]) || 0), 0);
-}
-
-function computeRangeStats(startMonth, endMonth, assetIds) {
-  const recs = getRecordsInRange(startMonth, endMonth);
-  if (!recs.length) return null;
-
-  const opening = getOpeningValue(startMonth, assetIds);
-
-  let periodContribution = 0, periodDividend = 0;
-  recs.forEach(r => {
-    assetIds.forEach(id => {
-      periodContribution += (r.contributions && r.contributions[id]) || 0;
-      periodDividend += (r.dividends && r.dividends[id]) || 0;
-    });
-  });
-
-  const lastRec = recs[recs.length - 1];
-  const closingValue = assetIds.reduce((sum, id) => sum + ((lastRec.values && lastRec.values[id]) || 0), 0);
-
-  const costBasis = opening + periodContribution;
-  const netProfit = closingValue + periodDividend - costBasis;
-  const roi = costBasis > 0 ? (netProfit / costBasis * 100) : null;
-
-  const flows = [];
-  const [sy, sm] = startMonth.split('-').map(Number);
-  if (opening > 0) {
-    flows.push({ date: new Date(sy, sm - 1, 1), amount: -opening });
-  }
-  recs.forEach(r => {
-    let c = 0, d = 0;
-    assetIds.forEach(id => {
-      c += (r.contributions && r.contributions[id]) || 0;
-      d += (r.dividends && r.dividends[id]) || 0;
-    });
-    const net = d - c;
-    if (net !== 0) {
-      const [y, m] = r.month.split('-').map(Number);
-      flows.push({ date: new Date(y, m - 1, 15), amount: net });
+// 以「期初市值」為起點的 XIRR。
+// 第一筆紀錄的 contributions 是「既有部位的成本」，不是當月才投入的現金，
+// 所以不能當成一筆 -本金 的現金流（那樣會把投資前已累積的獲利，當成這段期間賺的）。
+// 做法：期初＝第一筆紀錄月底的市值（流出），之後每月 投入=流出、配息/取出=流入，期末＝最後一筆市值。
+function xirrFromRecords(recs, assetIds) {
+  try {
+    if (!recs || recs.length < 2 || !assetIds.length) return null;
+    const sum = (obj) => assetIds.reduce((t, id) => t + (Number(obj && obj[id]) || 0), 0);
+    const monthEnd = (m) => { const [y, mo] = m.split('-').map(Number); return new Date(y, mo - 1, new Date(y, mo, 0).getDate()); };
+    const opening = sum(recs[0].values);
+    const closing = sum(recs[recs.length - 1].values);
+    if (opening <= 0 || closing <= 0) return null;
+    const flows = [{ date: monthEnd(recs[0].month), amount: -opening }];
+    for (let i = 1; i < recs.length; i++) {
+      const net = sum(recs[i].dividends) - sum(recs[i].contributions);
+      if (net !== 0) {
+        const [y, mo] = recs[i].month.split('-').map(Number);
+        flows.push({ date: new Date(y, mo - 1, 15), amount: net });
+      }
     }
-  });
-  const [ey, em] = endMonth.split('-').map(Number);
-  const lastDay = new Date(ey, em, 0).getDate();
-  if (closingValue > 0) {
-    flows.push({ date: new Date(ey, em - 1, lastDay), amount: closingValue });
-  }
-
-  let xirr = null;
-  if (flows.length >= 2) {
-    const hasNeg = flows.some(f => f.amount < 0);
-    const hasPos = flows.some(f => f.amount > 0);
-    if (hasNeg && hasPos) xirr = xirrSolve(flows);
-  }
-
-  return {
-    opening, periodContribution, periodDividend, closingValue,
-    costBasis, netProfit, roi, xirr,
-    monthsCount: recs.length,
-  };
+    flows.push({ date: monthEnd(recs[recs.length - 1].month), amount: closing });
+    return xirrSolve(flows);
+  } catch (e) { return null; }
 }
 
 function computeXIRR(recs) {
-  try {
-    const investAssets = state.assets.filter(a => a.category === 'invest');
-    if (!investAssets.length || !recs.length) return null;
-    const flows = [];
-    recs.forEach(r => {
-      let c = 0, d = 0;
-      investAssets.forEach(a => {
-        c += (r.contributions && r.contributions[a.id]) || 0;
-        d += (r.dividends && r.dividends[a.id]) || 0;
-      });
-      const net = d - c;
-      if (net !== 0) {
-        const [y, m] = r.month.split('-').map(Number);
-        flows.push({ date: new Date(y, m - 1, 15), amount: net });
-      }
-    });
-    const last = recs[recs.length - 1];
-    const [ly, lm] = last.month.split('-').map(Number);
-    const lastDay = new Date(ly, lm, 0).getDate();
-    const finalValue = computeTotals(last).investTotal;
-    if (finalValue <= 0) return null;
-    flows.push({ date: new Date(ly, lm - 1, lastDay), amount: finalValue });
-
-    if (flows.length < 2) return null;
-    const hasNeg = flows.some(f => f.amount < 0);
-    const hasPos = flows.some(f => f.amount > 0);
-    if (!hasNeg || !hasPos) return null;
-
-    return xirrSolve(flows);
-  } catch (e) {
-    return null;
-  }
+  const ids = state.assets.filter(a => a.category === 'invest').map(a => a.id);
+  return xirrFromRecords(recs, ids);
 }
 
 /* ==================== 渲染：Hero ==================== */
@@ -823,67 +925,99 @@ function renderHero() {
   const statPrincipal = document.getElementById('statPrincipal');
   const statDividend = document.getElementById('statDividend');
   const statUnrealized = document.getElementById('statUnrealized');
+  const statRealized = document.getElementById('statRealized');
   const statROI = document.getElementById('statROI');
   const statXIRR = document.getElementById('statXIRR');
   const assetROIItems = document.getElementById('assetROIItems');
 
-  if (!recs.length) {
-    totalEl.textContent = 'NT$ 0';
-    monthLabel.textContent = '尚無資料';
-    setChip(savingsChip, '存', null);
-    setChip(profitChip, '獲利', null);
-    [statPrincipal, statDividend, statUnrealized, statROI, statXIRR].forEach(el => { el.textContent = '—'; el.className = 'stat-value'; });
-    assetROIItems.innerHTML = '<span class="text-xs text-inkfaint">尚無資料</span>';
+  // 防呆 1：若無紀錄則顯示空白樣式並離開
+  if (!recs || !recs.length) {
+    if (totalEl) totalEl.textContent = 'NT$ 0';
+    if (monthLabel) monthLabel.textContent = '尚無資料';
+    if (savingsChip) setChip(savingsChip, '存', null);
+    if (profitChip) setChip(profitChip, '獲利', null);
+    [statPrincipal, statDividend, statUnrealized, statRealized, statROI, statXIRR].forEach(el => { 
+      if (el) { el.textContent = '—'; el.className = 'stat-value'; }
+    });
+    if (assetROIItems) assetROIItems.innerHTML = '<span class="text-xs text-inkfaint">尚無資料</span>';
     return;
   }
 
+  // 計算全域數據
   const idx = recs.length - 1;
   const latest = recs[idx];
   const totals = computeTotals(latest);
   const { savings, profit } = computeSavingsProfit(recs, idx);
-  totalEl.textContent = fmtMoney(totals.total);
-  monthLabel.textContent = formatMonthLabel(latest.month) + ' 概況';
-  setChip(savingsChip, '存', savings);
-  setChip(profitChip, '獲利', profit);
 
+  if (totalEl) totalEl.textContent = fmtMoney(totals.total);
+  if (monthLabel) monthLabel.textContent = formatMonthLabel(latest.month) + ' 概況';
+  if (savingsChip) setChip(savingsChip, '存', savings);
+  if (profitChip) setChip(profitChip, '獲利', profit);
+
+  // 計算累積指標
   const series = buildCumulativeSeries(recs);
-  const latestSeries = series[series.length - 1];
-  const principal = latestSeries.cumPrincipal;
-  const cumDividend = latestSeries.cumDividend;
-  const investValue = latestSeries.investValue;
-  const unrealized = investValue - principal;
-  const roi = principal > 0 ? ((investValue + cumDividend - principal) / principal * 100) : null;
-  const xirr = computeXIRR(recs);
+  const firstSeries = (series && series.length) ? series[0] : {};
+  const latestSeries = (series && series.length) ? series[series.length - 1] : {};
 
-  statPrincipal.textContent = fmtMoney(principal);
-  statPrincipal.className = 'stat-value';
+  const principal = latestSeries.cumPrincipal || 0;
+  const cumDividend = latestSeries.cumDividend || 0;
+  const investValue = latestSeries.investValue || 0;
 
-  statDividend.textContent = fmtMoney(cumDividend);
-  statDividend.className = 'stat-value';
+  // 整體投報率＝(價差值 + 已結價差 + 累積配息) ÷ 總投入本金，不年化——年化請看 XIRR。
+  // 價差值＝現值－剩餘成本（未實現）；已結價差＝賣出時已實現的價差（平均成本法）。
+  const investIdsForCost = state.assets.filter(a => a.category === 'invest').map(a => a.id);
+  const costAgg = investIdsForCost.map(id => computeAssetCost(id, recs));
+  const remainingCost = costAgg.reduce((t, x) => t + x.cost, 0);
+  const realized = costAgg.reduce((t, x) => t + x.realized, 0);
+  const unrealized = investValue - remainingCost;
+  let roi = null;
+  if (principal > 0) {
+    roi = ((unrealized + realized + cumDividend) / principal) * 100;
+  }
+  const xirr = typeof computeXIRR === 'function' ? computeXIRR(recs) : null;
 
-  statUnrealized.textContent = principal > 0 ? (unrealized >= 0 ? '+' : '') + fmtMoney(unrealized) : '—';
-  statUnrealized.className = 'stat-value ' + (principal > 0 ? (unrealized >= 0 ? 'text-forest' : 'text-brick') : '');
+  if (statPrincipal) { statPrincipal.textContent = fmtMoney(principal); statPrincipal.className = 'stat-value'; }
+  if (statDividend) { statDividend.textContent = fmtMoney(cumDividend); statDividend.className = 'stat-value'; }
 
-  statROI.textContent = roi === null ? '—' : (roi >= 0 ? '+' : '') + roi.toFixed(1) + '%';
-  statROI.className = 'stat-value ' + (roi === null ? '' : (roi >= 0 ? 'text-forest' : 'text-brick'));
+  if (statUnrealized) {
+    statUnrealized.textContent = principal > 0 ? (unrealized >= 0 ? '+' : '') + fmtMoney(unrealized) : '—';
+    statUnrealized.className = 'stat-value ' + (principal > 0 ? (unrealized >= 0 ? 'text-forest' : 'text-brick') : '');
+  }
+  if (statRealized) {
+    statRealized.textContent = principal > 0 ? (realized >= 0 ? '+' : '') + fmtMoney(realized) : '—';
+    statRealized.className = 'stat-value ' + (principal > 0 ? (realized >= 0 ? 'text-forest' : 'text-brick') : '');
+  }
+
+  if (statROI) {
+    statROI.textContent = roi === null ? '—' : (roi >= 0 ? '+' : '') + roi.toFixed(1) + '%';
+    statROI.className = 'stat-value ' + (roi === null ? '' : (roi >= 0 ? 'text-forest' : 'text-brick'));
+  }
 
   const xirrValid = xirr !== null && xirr !== undefined && isFinite(xirr) && !isNaN(xirr);
-  statXIRR.textContent = xirrValid ? (xirr >= 0 ? '+' : '') + (xirr * 100).toFixed(1) + '%' : '—';
-  statXIRR.className = 'stat-value ' + (xirrValid ? (xirr >= 0 ? 'text-forest' : 'text-brick') : '');
+  if (statXIRR) {
+    statXIRR.textContent = xirrValid ? (xirr >= 0 ? '+' : '') + (xirr * 100).toFixed(1) + '%' : '—';
+    statXIRR.className = 'stat-value ' + (xirrValid ? (xirr >= 0 ? 'text-forest' : 'text-brick') : '');
+  }
 
-  const investAssets = state.assets.filter(a => a.category === 'invest');
-  if (!investAssets.length) {
-    assetROIItems.innerHTML = '<span class="text-xs text-inkfaint">尚無投資項目</span>';
-  } else {
-    assetROIItems.innerHTML = investAssets.map(a => {
-      const r = computeAssetROI(a.id, recs);
-      const cls = r === null ? 'chip-neutral' : (r >= 0 ? 'chip-positive' : 'chip-negative');
-      const text = r === null ? `${escapeHtml(a.name)}：—` : `${escapeHtml(a.name)}：${r >= 0 ? '+' : ''}${r.toFixed(1)}%`;
-      return `<span class="chip ${cls}">${text}</span>`;
-    }).join('');
+  // --- 處理各投資品項投報率（價差 ÷ 剩餘成本）---
+  // 用跟「整體投報率」相同的邏輯：把該資產每月的 contributions/dividends 累加
+  // 起來當作本金／已實現配息，而不是去找一個資料裡根本不存在的「品項本金」欄位。
+  if (assetROIItems) {
+    const investAssets = state.assets.filter(a => a.category === 'invest');
+    if (!investAssets.length) {
+      assetROIItems.innerHTML = '<span class="text-xs text-inkfaint">尚無投資項目</span>';
+    } else {
+      assetROIItems.innerHTML = investAssets.map(a => {
+        const r = computeAssetROI(a.id, recs);
+        const cls = r === null ? 'chip-neutral' : (r >= 0 ? 'chip-positive' : 'chip-negative');
+        const text = r === null
+          ? `${escapeHtml(a.name)}：—`
+          : `${escapeHtml(a.name)}：${r >= 0 ? '+' : ''}${r.toFixed(1)}%`;
+        return `<span class="chip ${cls}">${text}</span>`;
+      }).join('');
+    }
   }
 }
-
 /* ==================== 渲染：圖表 ==================== */
 Chart.defaults.font.family = "'Inter','Noto Sans TC',sans-serif";
 Chart.defaults.color = '#20241F';
@@ -1065,54 +1199,22 @@ function renderIncomeChart() {
   });
 }
 
-function renderPercentTrendChart() {
-  const ctx = document.getElementById('percentTrendChart');
-  const recs = sortedRecords();
-  const assetIds = unionAssetIds();
-  const labels = recs.map(r => formatMonthLabel(r.month));
 
-  const datasets = assetIds.map(id => ({
-    label: assetLabel(id),
-    data: recs.map(r => {
-      const t = computeTotals(r).total;
-      const v = r.values ? r.values[id] : undefined;
-      if (!t || v === undefined) return null;
-      return +(v / t * 100).toFixed(1);
-    }),
-    borderColor: colorForAssetId(id),
-    backgroundColor: colorForAssetId(id),
-    spanGaps: true,
-    tension: 0.3,
-    pointRadius: 2,
-    borderWidth: 2,
-    fill: false,
-  }));
-
-  if (percentTrendChart) percentTrendChart.destroy();
-  percentTrendChart = new Chart(ctx, {
-    type: 'line',
-    data: { labels, datasets },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      interaction: { mode: 'index', intersect: false },
-      plugins: {
-        legend: { position: 'bottom', labels: { boxWidth: 12, padding: 12, font: { size: 11 } } },
-        tooltip: { callbacks: { label: c => `${c.dataset.label}：${c.parsed.y}%` } },
-      },
-      scales: {
-        y: { min: 0, max: 100, ticks: { callback: v => v + '%' }, grid: { color: '#E6E4D9' } },
-        x: { grid: { display: false } },
-      },
-    },
-  });
-}
 
 function renderPrincipalVsValueChart() {
   const ctx = document.getElementById('principalVsValueChart');
   const recs = sortedRecords();
   const series = buildCumulativeSeries(recs);
   const labels = series.map(s => formatMonthLabel(s.month));
+// 檢查是否完全沒有資產與投入本金數據
+  const hasData = series.some(s => s.totalValue > 0 || s.cumPrincipal > 0);
+  const container = document.getElementById('principalVsValueChart').closest('.panel');
+  if (!hasData) {
+    container.classList.add('hidden');
+    return;
+  } else {
+    container.classList.remove('hidden');
+  }
 
   if (principalVsValueChart) principalVsValueChart.destroy();
   principalVsValueChart = new Chart(ctx, {
@@ -1187,6 +1289,49 @@ function renderChartsSection() {
   renderIncomeChart();
   renderPercentTrendChart();
   renderPrincipalVsValueChart();
+}
+function renderPercentTrendChart() {
+  const ctx = document.getElementById('percentTrendChart');
+  if (!ctx) return;
+  const recs = sortedRecords();
+  const assetIds = unionAssetIds();
+  const labels = recs.map(r => formatMonthLabel(r.month));
+
+  const datasets = assetIds.map(id => ({
+    label: assetLabel(id),
+    data: recs.map(r => {
+      const t = computeTotals(r).total;
+      const v = r.values ? r.values[id] : undefined;
+      if (!t || v === undefined) return null;
+      return +(v / t * 100).toFixed(1);
+    }),
+    borderColor: colorForAssetId(id),
+    backgroundColor: colorForAssetId(id),
+    spanGaps: true,
+    tension: 0.3,
+    pointRadius: 2,
+    borderWidth: 2,
+    fill: false,
+  }));
+
+  if (percentTrendChart) percentTrendChart.destroy();
+  percentTrendChart = new Chart(ctx, {
+    type: 'line',
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { position: 'bottom', labels: { boxWidth: 12, padding: 12, font: { size: 11 } } },
+        tooltip: { callbacks: { label: c => `${c.dataset.label}：${c.parsed.y}%` } },
+      },
+      scales: {
+        y: { min: 0, max: 100, ticks: { callback: v => v + '%' }, grid: { color: '#E6E4D9' } },
+        x: { grid: { display: false } },
+      },
+    },
+  });
 }
 
 function renderAll() {
@@ -1413,18 +1558,54 @@ document.getElementById('addAssetForm').addEventListener('submit', e => {
 });
 
 /* ==================== 資料匯入／匯出 ==================== */
-function exportData() {
-  const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+function buildExportPayload() {
+  const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  return { json: JSON.stringify(state, null, 2), filename: `資產資料_${stamp}.json` };
+}
+
+// 包成 App（WebView）後，<a download> 常常沒有反應，所以優先用系統分享選單；
+// 不支援時才退回傳統下載。
+async function exportData() {
+  const { json, filename } = buildExportPayload();
+  try {
+    const file = new File([json], filename, { type: 'application/json' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: filename });
+      showToast('已開啟分享選單');
+      return;
+    }
+  } catch (e) {
+    if (e && e.name === 'AbortError') return; // 使用者自己取消
+  }
+  const blob = new Blob([json], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
   a.href = url;
-  a.download = `資產資料_${stamp}.json`;
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   a.remove();
-  URL.revokeObjectURL(url);
-  showToast('已匯出 JSON 檔案');
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  showToast('已匯出 JSON 檔案；若沒有出現檔案，請改按「複製」');
+}
+
+async function copyExportData() {
+  const { json } = buildExportPayload();
+  try {
+    await navigator.clipboard.writeText(json);
+  } catch (e) {
+    const ta = document.createElement('textarea');
+    ta.value = json;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch (_) {}
+    ta.remove();
+    if (!ok) { showToast('複製失敗'); return; }
+  }
+  showToast('已複製 JSON，可貼到備忘錄或檔案中保存');
 }
 
 document.getElementById('importFileInput').addEventListener('change', e => {
@@ -1434,301 +1615,474 @@ document.getElementById('importFileInput').addEventListener('change', e => {
   reader.onload = evt => {
     try {
       const parsed = JSON.parse(evt.target.result);
-      if (!Array.isArray(parsed.assets) || !Array.isArray(parsed.records)) throw new Error('格式不正確');
-      if (!confirm('匯入將覆蓋目前所有資料，確定要繼續嗎？')) return;
+      if (!parsed || !Array.isArray(parsed.assets) || !Array.isArray(parsed.records)) {
+        throw new Error('格式不符合資產資料規格');
+      }
       state = parsed;
       saveState();
-      renderAll();
       closeModal('dataModalBackdrop');
-      showToast('已匯入資料');
+      showToast('已成功匯入資料');
+      renderAll();
     } catch (err) {
-      alert('匯入失敗，檔案格式不正確');
+      alert('匯入失敗：' + err.message);
     }
-    e.target.value = '';
   };
   reader.readAsText(file);
+  e.target.value = '';
 });
 
-function loadDemo() {
-  if (state.records.length && !confirm('載入範例資料將覆蓋目前所有資料，確定要繼續嗎？')) return;
-  state = getDemoData();
-  saveState();
-  renderAll();
-  closeModal('dataModalBackdrop');
-  showToast('已載入範例資料');
+/* ==================== 安全元素監聽綁定函式 ==================== */
+function safeAddListener(id, event, handler) {
+  const el = document.getElementById(id);
+  if (el) {
+    el.addEventListener(event, handler);
+  }
 }
 
-function clearAllData() {
-  if (!confirm('確定要清空所有數據嗎？此動作無法復原。')) return;
-  state = { assets: state.assets && state.assets.length ? state.assets : getDefaultAssets(), records: [] };
-  saveState();
-  renderAll();
-  closeModal('dataModalBackdrop');
-  showToast('已清空所有數據');
-}
-
-/* ==================== 合併資料（更新數據） ==================== */
-let pendingMergeData = null;
-
-document.getElementById('mergeFileInput').addEventListener('change', e => {
+/* ==================== JSON 資料匯入處理 ==================== */
+safeAddListener('importFileInput', 'change', e => {
   const file = e.target.files[0];
   if (!file) return;
   const reader = new FileReader();
   reader.onload = evt => {
     try {
       const parsed = JSON.parse(evt.target.result);
-      if (!Array.isArray(parsed.assets) || !Array.isArray(parsed.records)) throw new Error('格式不正確');
-      pendingMergeData = parsed;
-      document.querySelector('input[name="mergeMode"][value="new"]').checked = true;
-      openModal('mergeModalBackdrop');
+      if (!parsed || !Array.isArray(parsed.assets) || !Array.isArray(parsed.records)) {
+        throw new Error('格式不符合資產資料規格');
+      }
+      state = parsed;
+      saveState();
+      closeModal('dataModalBackdrop');
+      showToast('已成功匯入資料');
+      renderAll();
     } catch (err) {
-      alert('匯入失敗，檔案格式不正確');
+      alert('匯入失敗：' + err.message);
     }
-    e.target.value = '';
   };
   reader.readAsText(file);
+  e.target.value = '';
 });
+
+/* ==================== 合併 JSON 數據與衝突處理 ==================== */
+let pendingMergeData = null;
+let pendingMergeSource = 'local';
+
+safeAddListener('mergeFileInput', 'change', e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = evt => {
+    try {
+      const parsed = JSON.parse(evt.target.result);
+      if (!parsed || !Array.isArray(parsed.assets) || !Array.isArray(parsed.records)) {
+        throw new Error('格式不符合資產資料規格');
+      }
+      pendingMergeData = parsed;
+      pendingMergeSource = 'local';
+      setMergeModalDefaults('local');
+      openModal('mergeModalBackdrop');
+    } catch (err) {
+      alert('讀取失敗：' + err.message);
+    }
+  };
+  reader.readAsText(file);
+  e.target.value = '';
+});
+
+// 雲端同步：預設「清除舊資料，以雲端為準」；匯入 JSON 合併：沿用「以新資料為主」，且不提供清除選項
+function setMergeModalDefaults(source) {
+  const isCloud = source === 'cloud';
+  const replaceOpt = document.getElementById('mergeReplaceOption');
+  if (replaceOpt) replaceOpt.style.display = isCloud ? '' : 'none';
+  const target = document.querySelector(`input[name="mergeMode"][value="${isCloud ? 'replace' : 'new'}"]`);
+  if (target) target.checked = true;
+  updateMergeConfirmLabel();
+}
+
+function updateMergeConfirmLabel() {
+  const btn = document.getElementById('confirmMergeBtn');
+  const checked = document.querySelector('input[name="mergeMode"]:checked');
+  if (btn) btn.textContent = (checked && checked.value === 'replace') ? '確認清除並同步' : '確認合併';
+}
+document.querySelectorAll('input[name="mergeMode"]').forEach(el => el.addEventListener('change', updateMergeConfirmLabel));
+
+function mergeAssetLists(baseAssets, incomingAssets) {
+  const map = new Map();
+  (baseAssets || []).forEach(a => map.set(a.id, { ...a }));
+  (incomingAssets || []).forEach(a => {
+    if (!map.has(a.id)) {
+      map.set(a.id, { ...a });
+    } else {
+      const existing = map.get(a.id);
+      map.set(a.id, { ...existing, name: a.name || existing.name, isActive: a.isActive !== undefined ? a.isActive : existing.isActive });
+    }
+  });
+  return Array.from(map.values());
+}
+
+// 同一個資產如果被拆成兩個不同 id（例如內建預設的 'stock' 跟 Sheet 動態解析出來的
+// '股票'，名稱一樣叫「股票」；或 'crypto'／「虛擬貨幣」跟 '虛擬'／「虛擬」這種
+// 名稱一個包含另一個的情況），只保留「有實際資料」的那個，刪掉一直是空的重複項目。
+// 有資料的資產一定會被保留，絕對不會被這個函式刪掉；只清理「從來沒有任何數字」的空殼資產。
+function dedupeAssetsByName(assets, records) {
+  if (!assets || !assets.length) return assets || [];
+
+  const hasData = {};
+  assets.forEach(a => { hasData[a.id] = false; });
+  (records || []).forEach(r => {
+    ['values', 'contributions', 'dividends'].forEach(field => {
+      const obj = r[field] || {};
+      Object.keys(obj).forEach(id => {
+        if (obj[id]) hasData[id] = true; // 曾經出現過非 0 的數字，就算有在用
+      });
+    });
+  });
+
+  const withData = assets.filter(a => hasData[a.id]);
+  const withoutData = assets.filter(a => !hasData[a.id]);
+
+  const nameRelated = (n1, n2) => {
+    if (!n1 || !n2) return false;
+    if (n1 === n2) return true;
+    return n1.indexOf(n2) !== -1 || n2.indexOf(n1) !== -1;
+  };
+
+  const isDuplicateOfDataAsset = (empty) => withData.some(a => nameRelated(a.name, empty.name));
+
+  const keptEmpty = [];
+  const seenEmptyNames = [];
+  withoutData.forEach(a => {
+    if (isDuplicateOfDataAsset(a)) return; // 有資料的同名資產已經存在，這個空殼直接丟掉
+    if (seenEmptyNames.some(n => nameRelated(n, a.name))) return; // 兩個空殼彼此重複，只留一個
+    seenEmptyNames.push(a.name);
+    keptEmpty.push(a);
+  });
+
+  return [...withData, ...keptEmpty];
+}
+
+// 把「Sheet 現在已經沒有的資產」從本機移除（包含它在所有歷史月份留下的
+// values/contributions/dividends），只在「背景雲端同步」時使用，因為只有這個
+// 情境下 Sheet 是完整、權威的資產清單。手動匯入 JSON 合併時不套用這個規則，
+// 維持原本「只加不減」的安全行為，避免匯入片段資料時誤刪東西。
+function removeAssetsMissingFromCloud(localAssets, localRecords, cloudAssets) {
+  const cloudIds = new Set((cloudAssets || []).map(a => a.id));
+  const keptAssets = (localAssets || []).filter(a => cloudIds.has(a.id));
+  const removedIds = (localAssets || []).filter(a => !cloudIds.has(a.id)).map(a => a.id);
+
+  if (!removedIds.length) return { assets: localAssets, records: localRecords };
+
+  const cleanedRecords = (localRecords || []).map(r => {
+    const copy = { ...r };
+    ['values', 'contributions', 'dividends'].forEach(field => {
+      if (!copy[field]) return;
+      const obj = { ...copy[field] };
+      removedIds.forEach(id => { delete obj[id]; });
+      copy[field] = obj;
+    });
+    return copy;
+  });
+
+  return { assets: keptAssets, records: cleanedRecords };
+}
+
+function mergeRecordLists(baseRecords, incomingRecords, mode) {
+  const map = new Map();
+  (baseRecords || []).forEach(r => map.set(r.month, JSON.parse(JSON.stringify(r))));
+
+  (incomingRecords || []).forEach(inc => {
+    if (!map.has(inc.month)) {
+      map.set(inc.month, JSON.parse(JSON.stringify(inc)));
+    } else {
+      const base = map.get(inc.month);
+      if (mode === 'new') {
+        map.set(inc.month, JSON.parse(JSON.stringify(inc)));
+      } else if (mode === 'sum') {
+        const mergedValues = { ...(base.values || {}) };
+        Object.entries(inc.values || {}).forEach(([k, v]) => {
+          mergedValues[k] = (mergedValues[k] || 0) + (Number(v) || 0);
+        });
+        const mergedContrib = { ...(base.contributions || {}) };
+        Object.entries(inc.contributions || {}).forEach(([k, v]) => {
+          mergedContrib[k] = (mergedContrib[k] || 0) + (Number(v) || 0);
+        });
+        const mergedDivs = { ...(base.dividends || {}) };
+        Object.entries(inc.dividends || {}).forEach(([k, v]) => {
+          mergedDivs[k] = (mergedDivs[k] || 0) + (Number(v) || 0);
+        });
+        map.set(inc.month, {
+          month: inc.month,
+          values: mergedValues,
+          contributions: mergedContrib,
+          dividends: mergedDivs,
+          nonInvestmentIncome: (Number(base.nonInvestmentIncome) || 0) + (Number(inc.nonInvestmentIncome) || 0),
+          expense: (Number(base.expense) || 0) + (Number(inc.expense) || 0),
+          notes: [base.notes, inc.notes].filter(Boolean).join('；'),
+        });
+      }
+    }
+  });
+
+  return Array.from(map.values()).sort((a, b) => a.month.localeCompare(b.month));
+}
+
+function confirmMergeData() {
+  if (!pendingMergeData) return;
+  const modeEl = document.querySelector('input[name="mergeMode"]:checked');
+  const mode = modeEl ? modeEl.value : 'new';
+
+  if (mode === 'replace') {
+    // 清除舊資料：整份換成雲端資料。雲端若沒有任何月紀錄就不動作，避免把本機清成空的。
+    const cloudRecords = pendingMergeData.records || [];
+    if (!cloudRecords.length) {
+      alert('雲端沒有任何月紀錄，已取消清除，本機資料維持不變。');
+      return;
+    }
+    state.assets = (pendingMergeData.assets || []).map(a => ({ ...a }));
+    state.records = cloudRecords.map(r => ({ ...r })).sort((a, b) => a.month.localeCompare(b.month));
+    saveState();
+    cancelMergeData();
+    closeModal('dataModalBackdrop');
+    showToast('已清除舊資料並以雲端資料取代');
+    renderAll();
+    return;
+  }
+
+  state.records = mergeRecordLists(state.records, pendingMergeData.records || [], mode);
+  state.assets = dedupeAssetsByName(mergeAssetLists(state.assets, pendingMergeData.assets || []), state.records);
+
+  saveState();
+  cancelMergeData();
+  closeModal('dataModalBackdrop');
+  showToast('數據合併成功');
+  renderAll();
+}
 
 function cancelMergeData() {
   pendingMergeData = null;
   closeModal('mergeModalBackdrop');
 }
 
-// 合併資產清單：以既有資產為主，新檔案新增的資產項目直接補進來
-function mergeAssetLists(oldAssets, newAssets) {
-  const merged = (oldAssets || []).map(a => ({ ...a }));
-  const ids = new Set(merged.map(a => a.id));
-  (newAssets || []).forEach(a => {
-    if (!ids.has(a.id)) {
-      merged.push({ ...a });
-      ids.add(a.id);
-    }
-  });
-  return merged;
-}
+/* ==================== 健壯版區間投報率計算核心邏輯 ==================== */
+function computeRangeStats(startMonth, endMonth, targetAssetIds) {
+  const recs = (state.records || []).filter(r => r.month >= startMonth && r.month <= endMonth)
+                               .sort((a, b) => a.month.localeCompare(b.month));
+  if (!recs.length) return null;
 
-// 依衝突處理模式合併單一數值（用於 values/contributions/dividends 裡的每個 assetId）
-function mergeFieldMap(oldMap, newMap, mode) {
-  const merged = { ...(oldMap || {}) };
-  Object.entries(newMap || {}).forEach(([assetId, newVal]) => {
-    if (!(assetId in merged)) {
-      merged[assetId] = newVal; // 舊檔案沒有這項資產，直接補上
-    } else {
-      const oldVal = merged[assetId];
-      if (mode === 'new') merged[assetId] = newVal;
-      else if (mode === 'old') { /* 保留舊值，不動作 */ }
-      else if (mode === 'sum') merged[assetId] = (Number(oldVal) || 0) + (Number(newVal) || 0);
-    }
-  });
-  return merged;
-}
+  const firstRec = recs[0];
+  const lastRec = recs[recs.length - 1];
 
-// 合併月紀錄：月份不重複的直接補入；月份重複的依 mode 合併該月內容
-function mergeRecordLists(oldRecords, newRecords, mode) {
-  const map = new Map((oldRecords || []).map(r => [r.month, JSON.parse(JSON.stringify(r))]));
-  (newRecords || []).forEach(nr => {
-    const existing = map.get(nr.month);
-    if (!existing) {
-      map.set(nr.month, JSON.parse(JSON.stringify(nr)));
-      return;
-    }
-    ['values', 'contributions', 'dividends'].forEach(field => {
-      existing[field] = mergeFieldMap(existing[field], nr[field], mode);
+  // 計算期初價值 (缺值防禦性補 0)
+  let openingValue = 0;
+  targetAssetIds.forEach(id => {
+    openingValue += Number(firstRec.values?.[id]) || 0;
+  });
+
+  // 計算期末價值
+  let closingValue = 0;
+  targetAssetIds.forEach(id => {
+    closingValue += Number(lastRec.values?.[id]) || 0;
+  });
+
+  // 累加區間內的新增投入與配息
+  let periodContribution = 0;
+  let periodDividend = 0;
+
+  recs.forEach((r, idx) => {
+    targetAssetIds.forEach(id => {
+      // 第一筆是期初基準（市值已含當月的投入與配息），只累加之後各月
+      if (idx > 0) {
+        periodContribution += Number(r.contributions?.[id]) || 0;
+        periodDividend += Number(r.dividends?.[id]) || 0;
+      }
     });
-    if (mode === 'new') {
-      if (nr.nonInvestmentIncome !== undefined) existing.nonInvestmentIncome = nr.nonInvestmentIncome;
-      if (nr.expense !== undefined) existing.expense = nr.expense;
-      if (nr.notes) existing.notes = nr.notes;
-    } else if (mode === 'sum') {
-      existing.nonInvestmentIncome = (Number(existing.nonInvestmentIncome) || 0) + (Number(nr.nonInvestmentIncome) || 0);
-      existing.expense = (Number(existing.expense) || 0) + (Number(nr.expense) || 0);
-      if (nr.notes && !existing.notes) existing.notes = nr.notes;
-    }
-    // mode === 'old'：nonInvestmentIncome / expense / notes 保留舊值，不動作
   });
-  return Array.from(map.values()).sort((a, b) => a.month.localeCompare(b.month));
-}
 
-function confirmMergeData() {
-  if (!pendingMergeData) return;
-  const modeInput = document.querySelector('input[name="mergeMode"]:checked');
-  const mode = modeInput ? modeInput.value : 'new';
-  const mergedAssets = mergeAssetLists(state.assets, pendingMergeData.assets);
-  const mergedRecords = mergeRecordLists(state.records, pendingMergeData.records, mode);
-  state = { assets: mergedAssets, records: mergedRecords };
-  saveState();
-  renderAll();
-  pendingMergeData = null;
-  closeModal('mergeModalBackdrop');
-  closeModal('dataModalBackdrop');
-  const modeLabel = mode === 'new' ? '新檔案為主' : mode === 'old' ? '舊檔案為主' : '數值相加';
-  showToast(`已合併資料（衝突處理：${modeLabel}）`);
-}
+  // 淨損益公式：期末價值 + 累積配息 - 期初價值 - 期間新增投入
+  const netProfit = closingValue + periodDividend - openingValue - periodContribution;
 
-/* ==================== Modal / Toast 共用 ==================== */
-function closeAllModals() {
-  document.querySelectorAll('.modal-backdrop').forEach(el => {
-    el.classList.add('hidden');
-    el.style.display = 'none';
-  });
-}
-function openModal(id) {
-  // 只允許同時開啟一個 Modal，避免多個 Modal 疊在一起顯示
-  closeAllModals();
-  const el = document.getElementById(id);
-  el.classList.remove('hidden');
-  el.style.display = 'flex';
-  document.body.style.overflow = 'hidden';
-}
-function closeModal(id) {
-  const el = document.getElementById(id);
-  el.classList.add('hidden');
-  el.style.display = 'none';
-  document.body.style.overflow = '';
-}
-document.querySelectorAll('.modal-backdrop').forEach(el => {
-  el.addEventListener('click', e => { if (e.target === el) closeModal(el.id); });
-});
-document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') {
-    document.querySelectorAll('.modal-backdrop').forEach(el => { if (!el.classList.contains('hidden')) closeModal(el.id); });
+  // 總成本基數：期初價值 + 期間新增投入
+  const totalCost = openingValue + periodContribution;
+
+  // 投報率計算防護：總成本為零時避免產出非數值 (NaN)
+  let roi = null;
+  if (totalCost > 0) {
+    roi = (netProfit / totalCost) * 100;
+  } else if (totalCost === 0 && closingValue === 0) {
+    roi = 0;
   }
-});
 
-function showToast(msg) {
-  const container = document.getElementById('toastContainer');
-  const el = document.createElement('div');
-  el.className = 'toast';
-  el.textContent = msg;
-  container.appendChild(el);
-  setTimeout(() => {
-    el.classList.add('toast-out');
-    setTimeout(() => el.remove(), 300);
-  }, 2200);
+  // 年化報酬率：以實際現金流日期計算 XIRR（原本用「紀錄筆數/12」硬開次方，會多算一個月）
+  const monthsCount = recs.length;
+  const xirr = xirrFromRecords(recs, targetAssetIds);
+
+  return {
+    opening: openingValue,
+    closingValue: closingValue,
+    periodContribution: periodContribution,
+    periodDividend: periodDividend,
+    netProfit: netProfit,
+    totalCost: totalCost,
+    roi: roi,
+    xirr: xirr,
+    monthsCount: monthsCount
+  };
 }
 
-/* ==================== 導覽列事件 ==================== */
-document.getElementById('btnOverview').addEventListener('click', () => {
-  const hero = document.getElementById('hero');
-  hero.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  hero.classList.add('flash');
-  setTimeout(() => hero.classList.remove('flash'), 900);
-});
-document.getElementById('btnMonthly').addEventListener('click', openMonthlyModal);
-document.getElementById('btnSettings').addEventListener('click', () => { renderSettingsList(); openModal('settingsModalBackdrop'); });
-document.getElementById('btnData').addEventListener('click', () => openModal('dataModalBackdrop'));
-document.getElementById('btnAnalysis').addEventListener('click', openAnalysisModal);
-
-/* ==================== 自訂區間投報率分析 ==================== */
-function renderAnalysisAssetCheckboxes() {
-  const container = document.getElementById('analysisAssetCheckboxes');
-  const investAssets = state.assets.filter(a => a.category === 'invest');
-  if (!investAssets.length) {
-    container.innerHTML = '<p class="text-sm text-inkfaint">尚無投資項目</p>';
-    return;
-  }
-  container.innerHTML = investAssets.map(a => `
-    <label class="flex items-center gap-2 text-sm border hairline rounded px-3 py-1.5 cursor-pointer bg-white">
-      <input type="checkbox" class="analysis-asset-checkbox" value="${a.id}" checked>
-      <span>${escapeHtml(a.name)}${a.isDeleted ? '（已刪除）' : ''}</span>
-    </label>
-  `).join('');
-}
-
+/* ==================== 自訂區間投報率分析視窗 ==================== */
 function openAnalysisModal() {
   const recs = sortedRecords();
+  if (!recs.length) {
+    alert('尚無任何歷史紀錄，無法進行分析');
+    return;
+  }
   const startInput = document.getElementById('analysisStartMonth');
   const endInput = document.getElementById('analysisEndMonth');
-  if (recs.length) {
-    startInput.value = recs[0].month;
-    endInput.value = recs[recs.length - 1].month;
-  } else {
-    startInput.value = '';
-    endInput.value = '';
+  if (startInput) startInput.value = recs[0].month;
+  if (endInput) endInput.value = recs[recs.length - 1].month;
+
+  const container = document.getElementById('analysisAssetCheckboxes');
+  const investAssets = (state.assets || []).filter(a => a.category === 'invest');
+  if (container) {
+    if (!investAssets.length) {
+      container.innerHTML = '<span class="text-xs text-inkfaint">尚無投資品項</span>';
+    } else {
+      container.innerHTML = investAssets.map(a => `
+        <label class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded border hairline bg-white text-sm cursor-pointer">
+          <input type="checkbox" value="${a.id}" checked class="analysis-asset-cb">
+          <span>${escapeHtml(a.name)}</span>
+        </label>
+      `).join('');
+    }
   }
-  renderAnalysisAssetCheckboxes();
-  document.getElementById('analysisResult').innerHTML = '<p class="text-sm text-inkfaint">請選擇區間與品項後按下「計算投報率」。</p>';
+  const resultEl = document.getElementById('analysisResult');
+  if (resultEl) {
+    resultEl.innerHTML = '<p class="text-sm text-inkfaint">請選擇區間與品項後按下「計算投報率」。</p>';
+  }
   openModal('analysisModalBackdrop');
 }
 
 function runAnalysis() {
-  const startMonth = document.getElementById('analysisStartMonth').value;
-  const endMonth = document.getElementById('analysisEndMonth').value;
+  const startMonth = document.getElementById('analysisStartMonth')?.value;
+  const endMonth = document.getElementById('analysisEndMonth')?.value;
+  if (!startMonth || !endMonth) { alert('請選擇完整月份區間'); return; }
+  if (startMonth > endMonth) { alert('起始月份不可大於結束月份'); return; }
+
+  const checkedBoxes = document.querySelectorAll('.analysis-asset-cb:checked');
+  const selectedIds = Array.from(checkedBoxes).map(cb => cb.value);
+  if (!selectedIds.length) { alert('請至少選擇一項投資品項'); return; }
+
+  const stats = computeRangeStats(startMonth, endMonth, selectedIds);
   const resultEl = document.getElementById('analysisResult');
+  if (!resultEl) return;
 
-  if (!startMonth || !endMonth) {
-    resultEl.innerHTML = '<p class="text-sm text-brick">請選擇起始與結束月份。</p>';
-    return;
-  }
-  if (startMonth > endMonth) {
-    resultEl.innerHTML = '<p class="text-sm text-brick">起始月份需早於或等於結束月份。</p>';
+  if (!stats || (stats.totalCost === 0 && stats.roi === null)) {
+    resultEl.innerHTML = '<p class="text-sm text-brick">選定區間內無有效投資本金或數據。</p>';
     return;
   }
 
-  const assetIds = [...document.querySelectorAll('.analysis-asset-checkbox:checked')].map(el => el.value);
-  if (!assetIds.length) {
-    resultEl.innerHTML = '<p class="text-sm text-brick">請至少選擇一項投資品項。</p>';
-    return;
-  }
-
-  const stats = computeRangeStats(startMonth, endMonth, assetIds);
-  if (!stats) {
-    resultEl.innerHTML = '<p class="text-sm text-inkfaint">選定區間內沒有紀錄。</p>';
-    return;
-  }
-
-  const roiText = stats.roi === null ? '—' : (stats.roi >= 0 ? '+' : '') + stats.roi.toFixed(1) + '%';
-  const roiCls = stats.roi === null ? '' : (stats.roi >= 0 ? 'text-forest' : 'text-brick');
-  const xirrValid = stats.xirr !== null && stats.xirr !== undefined && isFinite(stats.xirr);
-  const xirrText = xirrValid ? (stats.xirr >= 0 ? '+' : '') + (stats.xirr * 100).toFixed(1) + '%' : '—';
-  const xirrCls = xirrValid ? (stats.xirr >= 0 ? 'text-forest' : 'text-brick') : '';
-  const netCls = stats.netProfit >= 0 ? 'text-forest' : 'text-brick';
+  const roiStr = stats.roi !== null ? (stats.roi >= 0 ? '+' : '') + stats.roi.toFixed(2) + '%' : '—';
+  const xirrStr = stats.xirr !== null && isFinite(stats.xirr) ? (stats.xirr >= 0 ? '+' : '') + (stats.xirr * 100).toFixed(2) + '%' : '—';
 
   resultEl.innerHTML = `
-    <p class="text-xs text-inkfaint mb-3">${formatMonthLabel(startMonth)} ～ ${formatMonthLabel(endMonth)}（共 ${stats.monthsCount} 筆月紀錄）</p>
-    <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
-      <div class="stat-tile">
-        <p class="stat-label">期初市值</p>
-        <p class="stat-value">${fmtMoney(stats.opening)}</p>
+    <div class="space-y-3">
+      <div class="grid grid-cols-2 gap-3 text-sm">
+        <div><span class="text-inkfaint">期初資產價值：</span><span class="font-medium">${fmtMoney(stats.opening)}</span></div>
+        <div><span class="text-inkfaint">期末資產價值：</span><span class="font-medium">${fmtMoney(stats.closingValue)}</span></div>
+        <div><span class="text-inkfaint">期間新增投入本金：</span><span class="font-medium">${fmtMoney(stats.periodContribution)}</span></div>
+        <div><span class="text-inkfaint">期間累積配息收入：</span><span class="font-medium">${fmtMoney(stats.periodDividend)}</span></div>
+        <div><span class="text-inkfaint">淨損益：</span><span class="font-medium ${stats.netProfit >= 0 ? 'text-forest' : 'text-brick'}">${stats.netProfit >= 0 ? '+' : ''}${fmtMoney(stats.netProfit)}</span></div>
+        <div><span class="text-inkfaint">計算涵蓋月份數：</span><span class="font-medium">${stats.monthsCount} 個月</span></div>
       </div>
-      <div class="stat-tile">
-        <p class="stat-label">期間投入本金</p>
-        <p class="stat-value">${fmtMoney(stats.periodContribution)}</p>
-      </div>
-      <div class="stat-tile">
-        <p class="stat-label">期間配息</p>
-        <p class="stat-value">${fmtMoney(stats.periodDividend)}</p>
-      </div>
-      <div class="stat-tile">
-        <p class="stat-label">期末市值</p>
-        <p class="stat-value">${fmtMoney(stats.closingValue)}</p>
-      </div>
-      <div class="stat-tile">
-        <p class="stat-label">總損益</p>
-        <p class="stat-value ${netCls}">${stats.netProfit >= 0 ? '+' : ''}${fmtMoney(stats.netProfit)}</p>
-      </div>
-      <div class="stat-tile">
-        <p class="stat-label">投報率（ROI）</p>
-        <p class="stat-value ${roiCls}">${roiText}</p>
-      </div>
-      <div class="stat-tile col-span-2 sm:col-span-1">
-        <p class="stat-label">年化報酬率（XIRR）</p>
-        <p class="stat-value ${xirrCls}">${xirrText}</p>
+      <div class="grid grid-cols-2 gap-3 pt-3 border-t hairline">
+        <div class="stat-tile">
+          <p class="stat-label">區間投資報酬率（ROI）</p>
+          <p class="stat-value ${stats.roi !== null && stats.roi >= 0 ? 'text-forest' : 'text-brick'}">${roiStr}</p>
+        </div>
+        <div class="stat-tile">
+          <p class="stat-label">區間年化報酬率（XIRR）</p>
+          <p class="stat-value ${stats.xirr !== null && stats.xirr >= 0 ? 'text-forest' : 'text-brick'}">${xirrStr}</p>
+        </div>
       </div>
     </div>
   `;
 }
 
-/* ==================== 初始化 ==================== */
-(function init() {
+/* ==================== 視窗與 UI 控制函式 ==================== */
+function openModal(id) {
+  const el = document.getElementById(id);
+  if (el) el.classList.remove('hidden');
+}
+
+function closeModal(id) {
+  const el = document.getElementById(id);
+  if (el) el.classList.add('hidden');
+}
+
+function loadDemo() {
+  if (state && state.records && state.records.length > 0) {
+    if (!confirm('載入範例資料將覆蓋目前所有紀錄，確定要繼續嗎？')) return;
+  }
+  state = getDemoData();
+  saveState();
+  closeModal('chartsEmptyState');
+  closeModal('dataModalBackdrop');
+  showToast('已載入範例資料');
+  renderAll();
+}
+
+function clearAllData() {
+  if (!confirm('確定要清空所有月紀錄嗎？此動作無法復原！')) return;
+  state.records = [];
+  saveState();
+  closeModal('dataModalBackdrop');
+  showToast('已清空所有紀錄');
+  renderAll();
+}
+
+function showToast(msg) {
+  const container = document.getElementById('toastContainer');
+  if (!container) return;
+  const toast = document.createElement('div');
+  toast.className = 'toast';
+  toast.textContent = msg;
+  container.appendChild(toast);
+  setTimeout(() => {
+    toast.classList.add('toast-out');
+    setTimeout(() => toast.remove(), 300);
+  }, 2500);
+}
+
+/* ==================== 導覽列與功能按鈕綁定 ==================== */
+safeAddListener('btnOverview', 'click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+safeAddListener('btnMonthly', 'click', openMonthlyModal);
+safeAddListener('btnSettings', 'click', () => openModal('settingsModalBackdrop'));
+safeAddListener('btnAnalysis', 'click', openAnalysisModal);
+safeAddListener('btnData', 'click', () => openModal('dataModalBackdrop'));
+safeAddListener('btnConfirmMerge', 'click', confirmMergeData);
+safeAddListener('btnCancelMerge', 'click', cancelMergeData);
+safeAddListener('btnRunAnalysis', 'click', runAnalysis);
+
+/* ==================== 初始化應用程式 ==================== */
+function initApp() {
   state = loadState();
   if (!state) {
     state = getDemoData();
     saveState();
   }
-  closeAllModals();
+  // 清掉「同名但一直沒有資料」的重複資產（例如內建 stock 跟 Sheet 動態解析出來的「股票」重複）
+  const dedupedAssets = dedupeAssetsByName(state.assets, state.records);
+  if (dedupedAssets.length !== (state.assets || []).length) {
+    state.assets = dedupedAssets;
+    saveState();
+  }
   renderAll();
-})();
+  if (typeof isApiConfigured === 'function' && isApiConfigured()) {
+    syncFromCloud(false);
+  }
+}
+
+document.addEventListener('DOMContentLoaded', initApp);
 </script>
 </body>
 </html>
